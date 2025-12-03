@@ -1,0 +1,6 @@
+spring:
+  application:
+    name: popularity-service
+
+webclient:
+  buffer: 10MB
