@@ -21,7 +21,6 @@ class SimpleScoringStrategyTest {
 
         int score = strategy.calculateScore(repo);
 
-        // expected = stars * 2 + forks + recencyWeight
         assertThat(score).isGreaterThan(160);
     }
 

@@ -4,12 +4,14 @@ import com.scoring.github.popularity_service.dto.GithubSearchResponseDto;
 import com.scoring.github.popularity_service.dto.PopularityResponseDto;
 import com.scoring.github.popularity_service.remote.GithubApi;
 import com.scoring.github.popularity_service.scoringstrategy.ScoringStrategy;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDate;
 import java.util.*;
 import java.util.stream.Collectors;
 
+@Slf4j
 @Service
 public class RepositoryScoringService {
 
@@ -50,10 +52,30 @@ public class RepositoryScoringService {
         List<PopularityResponseDto> result = new ArrayList<>();
         int page = 1;
 
-        while (result.size() < limit && (page - 1) * GITHUB_PAGE_SIZE < GITHUB_MAX_RESULTS) {
+        log.info("Starting repository fetch for query '{}'", query);
 
-            GithubSearchResponseDto response =
-                    githubApi.searchRepositories(query, GITHUB_PAGE_SIZE, page);
+        processPopularityScores(limit, result, page, query, strategy);
+
+        result.sort(Comparator.comparingInt(PopularityResponseDto::getPopularityScore).reversed());
+        return result;
+    }
+
+    private void processPopularityScores(int limit, List<PopularityResponseDto> result, int page, String query, ScoringStrategy strategy) {
+        while (result.size() < limit && (page - 1) * GITHUB_PAGE_SIZE < GITHUB_MAX_RESULTS) {
+            GithubSearchResponseDto response;
+
+            try {
+                response = githubApi.searchRepositories(query, GITHUB_PAGE_SIZE, page);
+            } catch (IllegalArgumentException e) {
+                log.error("Invalid request to GitHub API for query '{}', page {}: {}", query, page, e.getMessage());
+                throw e;
+            } catch (Exception e) {
+                log.error("Failed to fetch repositories from GitHub for query '{}', page {}.", query, page, e);
+                throw new IllegalStateException("GitHub API call failed. Please retry later.", e);
+            }
+
+            log.info("Fetched page {} with {} items for query '{}'", page,
+                    response.getItems() != null ? response.getItems().size() : 0, query);
 
             if (response.getItems() == null || response.getItems().isEmpty())
                 break;
@@ -62,14 +84,16 @@ public class RepositoryScoringService {
                 if (result.size() >= limit)
                     break;
 
-                int score = strategy.calculateScore(repo);
-                result.add(mapToPopularityResponse(repo, score));
+                try {
+                    int score = strategy.calculateScore(repo);
+                    log.info("Repo: {}, Score: {}", repo.getName(), score);
+                    result.add(mapToPopularityResponse(repo, score));
+                } catch (Exception e) {
+                    log.warn("Failed to score repository '{}'. Skipping. Reason: {}", repo != null ? repo.getName() : "<unknown>", e.getMessage());
+                }
             }
             page++;
         }
-
-        result.sort(Comparator.comparingInt(PopularityResponseDto::getPopularityScore).reversed());
-        return result;
     }
 
     private String buildGithubQuery(String language, LocalDate createdAfterDate) {
