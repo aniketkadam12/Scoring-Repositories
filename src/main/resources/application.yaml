@@ -3,4 +3,5 @@ spring:
     name: popularity-service
 
 webclient:
-  buffer: 10MB
+  buffer:
+    size: 20MB
